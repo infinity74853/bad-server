@@ -8,6 +8,7 @@
     "format": "prettier ./src --write",
     "build": "tsc",
     "dev": "npx nodemon -L src/app.ts ",
+    "dev:local": "npx nodemon -L src/app.local.ts",
     "start": "ts-node src/app.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

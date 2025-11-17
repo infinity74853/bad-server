@@ -14,3 +14,7 @@ docker compose up -d
 
 ## Ссылка на GitHub-репозиторий проекта
 https://github.com/infinity74853/bad-server
+
+Имя: Игорь
+Когорта: 33
+Курс: Фулстек-разработчик расширенный
