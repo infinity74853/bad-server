@@ -6,6 +6,7 @@ import ForbiddenError from '../errors/forbidden-error'
 import NotFoundError from '../errors/not-found-error'
 import UnauthorizedError from '../errors/unauthorized-error'
 import UserModel, { Role } from '../models/user'
+import { csrfProtection, setCSRFToken } from './csrf';
 
 // есть файл middlewares/auth.js, в нём мидлвэр для проверки JWT;
 
@@ -93,5 +94,7 @@ export function currentUserAccessMiddleware<T>(
         return next()
     }
 }
+
+export { csrfProtection, setCSRFToken };
 
 export default auth

@@ -14,6 +14,7 @@ import { getOrderByNumber } from '../../services/slice/orders/thunk'
 import { adapterOrderFromServer } from '../../utils/adapterOrderFromServer'
 import { Preloader } from '../preloader'
 import styles from './admin.module.scss'
+import { sanitizeText } from '../../utils/sanitize'
 
 const ActionsButton = () => {
     const number = useParams().number || ''
@@ -101,11 +102,9 @@ export default function AdminOrderDetail() {
                 extraClass: styles.profile__gridRowFullWidth,
                 render: (dataInfo: OrderData) => (
                     <>
-                        <div
-                            dangerouslySetInnerHTML={{
-                                __html: dataInfo.comment,
-                            }}
-                        />
+                        <div>
+                            {sanitizeText(dataInfo.comment)}
+                        </div>
                     </>
                 ),
             },

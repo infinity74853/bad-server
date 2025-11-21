@@ -24,6 +24,7 @@
     "no-console": "off",
     "consistent-return": "off",
     "func-names": "off",
+    "import/no-extraneous-dependencies": "off",
     "@typescript-eslint/no-shadow": "warn",
     "import/extensions": [
       "error",

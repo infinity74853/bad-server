@@ -31,6 +31,11 @@ export type ApiListResponse<Type> = {
 }
 
 class Api {
+    private getCSRFToken = (): string => {
+        // Получаем CSRF токен из куки (Angular-style)
+        return getCookie('XSRF-TOKEN') || '';
+    }
+
     private readonly baseUrl: string
     protected options: RequestInit
 
@@ -55,9 +60,19 @@ class Api {
 
     protected async request<T>(endpoint: string, options: RequestInit) {
         try {
+            const csrfToken = this.getCSRFToken();
+        
+        const headers = {
+            ...options.headers,
+            ...(csrfToken && options.method !== 'GET' && {
+                'X-CSRF-Token': csrfToken, // ← Добавляем CSRF токен
+            }),
+        };
+
             const res = await fetch(`${this.baseUrl}${endpoint}`, {
                 ...this.options,
                 ...options,
+                headers,
             })
             return await this.handleResponse<T>(res)
         } catch (error) {
