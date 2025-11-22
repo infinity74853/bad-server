@@ -84,10 +84,17 @@ export const getCustomers = async (
             return next(new BadRequestError('Невалидный порядок сортировки'));
         }
 
-        // ВАЛИДАЦИЯ search - проверяем на инъекции
-        if (search && hasNoSQLInjection(search as string)) {
-            return next(new BadRequestError('Обнаружена попытка NoSQL-инъекции в поиске'));
-        }
+        // ФУНКЦИЯ ПОИСКА ПО ЗАПРОСУ
+        // const isValidSearchQuery = (query: string): boolean => {
+        //     // Разрешаем одиночные спецсимволы в поиске
+        //     const singleSymbols = ['*', '+', '?', '.', '^', '$', '(', ')', '[', ']', '\\'];
+        //     return !singleSymbols.some(symbol => query === symbol); // ИСПРАВИЛ логику
+        // };
+
+        // ПРОВЕРКА
+        // if (search && hasNoSQLInjection(search as string) && !isValidSearchQuery(search as string)) {
+        //     return next(new BadRequestError('Обнаружена попытка NoSQL-инъекции в поиске'));
+        // }
 
         // ОБЪЯВЛЯЕМ filters ЗДЕСЬ - ПЕРЕД ИСПОЛЬЗОВАНИЕМ
         const filters: FilterQuery<Partial<IUser>> = {}

@@ -159,6 +159,7 @@ export const sanitizeRequestQuery = (query: any): any => {
         throw new BadRequestError('Обнаружена попытка NoSQL-инъекции');
     }
 };
+
 /**
  * Проверяет сырую URL query строку на NoSQL-инъекции
  */
@@ -168,12 +169,16 @@ export const checkRawQueryString = (queryString: string): void => {
         '$where', '$exists', '$or', '$and', '$not', '$nor', '$elemMatch',
         '$all', '$size', '$type', '$mod', '$text', '$expr'
     ];
+
+    // ИСКЛЮЧАЕМ search параметр из проверки
+    const searchParamRegex = /search=[^&]*/g;
+    const queryWithoutSearch = queryString.replace(searchParamRegex, '');
     
     // Проверяем наличие операторов в query строке
     const hasDangerousOperator = dangerousOperators.some(operator => 
-        queryString.includes(`${operator}=`) || 
-        queryString.includes(`[${operator}]`) ||
-        queryString.includes(`{"${operator}"`)
+        queryWithoutSearch.includes(`${operator}=`) || 
+        queryWithoutSearch.includes(`[${operator}]`) ||
+        queryWithoutSearch.includes(`{"${operator}"`)
     );
     
     if (hasDangerousOperator) {

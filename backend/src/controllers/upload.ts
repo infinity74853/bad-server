@@ -7,7 +7,6 @@ export const uploadFile = async (
     res: Response,
     next: NextFunction
 ) => {
-    // Проверка на кастомные ошибки валидации
     if ((req as any).fileValidationError) {
         return next(new BadRequestError((req as any).fileValidationError))
     }
@@ -17,11 +16,11 @@ export const uploadFile = async (
     }
     
     try {
-        const fileName = process.env.UPLOAD_PATH
-            ? `/${process.env.UPLOAD_PATH}/${req.file.filename}`
-            : `/${req.file.filename}`
-        return res.status(constants.HTTP_STATUS_CREATED).send({
-            fileName,            
+        // ВОЗВРАЩАЕМ ТОЛЬКО ИМЯ ФАЙЛА БЕЗ ПУТЕЙ
+        const fileName = req.file.filename;
+        
+        return res.status(constants.HTTP_STATUS_CREATED).json({
+            fileName
         })
     } catch (error) {
         return next(error)
