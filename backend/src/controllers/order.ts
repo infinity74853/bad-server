@@ -5,6 +5,8 @@ import NotFoundError from '../errors/not-found-error'
 import Order, { IOrder } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import User from '../models/user'
+import { sanitizeHTML } from '../utils/sanitize';
+import { sanitizeFilter } from '../utils/nosql-sanitize';
 
 // eslint-disable-next-line max-len
 // GET /orders?page=2&limit=5&sort=totalAmount&order=desc&orderDateFrom=2024-07-01&orderDateTo=2024-08-01&status=delivering&totalAmountFrom=100&totalAmountTo=1000&search=%2B1
@@ -15,28 +17,56 @@ export const getOrders = async (
     next: NextFunction
 ) => {
     try {
+        // ✅ СТРОГАЯ ВАЛИДАЦИЯ ПАРАМЕТРОВ
+        const allowedParams = [
+            'page', 'limit', 'sortField', 'sortOrder', 'status',
+            'totalAmountFrom', 'totalAmountTo', 'orderDateFrom', 'orderDateTo', 'search'
+        ];
+        
+        const invalidParams = Object.keys(req.query).filter(param => !allowedParams.includes(param));
+        if (invalidParams.length > 0) {
+            return next(new BadRequestError(`Недопустимые параметры: ${invalidParams.join(', ')}`));
+        }
+
+        // ✅ ВАЛИДАЦИЯ ЧИСЛОВЫХ ПАРАМЕТРОВ
+        const { page = 1, limit = 10 } = req.query;
+
+        const normalizedLimit = Math.min(Number(limit), 10);
+        
+        if (page && Number.isNaN(Number(page))) {
+            return next(new BadRequestError('Параметр page должен быть числом'));
+        }
+        if (limit && Number.isNaN(Number(limit))) {
+            return next(new BadRequestError('Параметр limit должен быть числом'));
+        }
+
+        // ✅ ВАЛИДАЦИЯ ДАТ
+        const { orderDateFrom, orderDateTo } = req.query;
+
+        if (orderDateFrom && Number.isNaN(Date.parse(orderDateFrom as string))) {
+            return next(new BadRequestError('Неверный формат даты orderDateFrom'));
+        }
+        if (orderDateTo && Number.isNaN(Date.parse(orderDateTo as string))) {
+            return next(new BadRequestError('Неверный формат даты orderDateTo'));
+        }
+
         const {
-            page = 1,
-            limit = 10,
             sortField = 'createdAt',
             sortOrder = 'desc',
             status,
             totalAmountFrom,
-            totalAmountTo,
-            orderDateFrom,
-            orderDateTo,
-            search,
-        } = req.query
+            totalAmountTo,            
+        } = req.query;  // ← ИСПОЛЬЗУЕМ req.query напрямую после валидации
 
         const filters: FilterQuery<Partial<IOrder>> = {}
 
+        // ✅ ВАЛИДАЦИЯ СТАТУСА
         if (status) {
-            if (typeof status === 'object') {
-                Object.assign(filters, status)
+            const allowedStatuses = ['pending', 'processing', 'delivering', 'completed', 'cancelled'];
+            if (!allowedStatuses.includes(status as string)) {
+                return next(new BadRequestError('Невалидный статус заказа'));
             }
-            if (typeof status === 'string') {
-                filters.status = status
-            }
+            filters.status = status;
         }
 
         if (totalAmountFrom) {
@@ -67,8 +97,11 @@ export const getOrders = async (
             }
         }
 
+        // ДОБАВЛЯЕМ САНИТИЗАЦИЮ ФИЛЬТРОВ:
+        const safeFilters = sanitizeFilter(filters);
+
         const aggregatePipeline: any[] = [
-            { $match: filters },
+            { $match: safeFilters },
             {
                 $lookup: {
                     from: 'products',
@@ -89,25 +122,6 @@ export const getOrders = async (
             { $unwind: '$products' },
         ]
 
-        if (search) {
-            const searchRegex = new RegExp(search as string, 'i')
-            const searchNumber = Number(search)
-
-            const searchConditions: any[] = [{ 'products.title': searchRegex }]
-
-            if (!Number.isNaN(searchNumber)) {
-                searchConditions.push({ orderNumber: searchNumber })
-            }
-
-            aggregatePipeline.push({
-                $match: {
-                    $or: searchConditions,
-                },
-            })
-
-            filters.$or = searchConditions
-        }
-
         const sort: { [key: string]: any } = {}
 
         if (sortField && sortOrder) {
@@ -116,8 +130,8 @@ export const getOrders = async (
 
         aggregatePipeline.push(
             { $sort: sort },
-            { $skip: (Number(page) - 1) * Number(limit) },
-            { $limit: Number(limit) },
+            { $skip: (Number(page) - 1) * normalizedLimit },
+            { $limit: normalizedLimit },
             {
                 $group: {
                     _id: '$_id',
@@ -132,8 +146,8 @@ export const getOrders = async (
         )
 
         const orders = await Order.aggregate(aggregatePipeline)
-        const totalOrders = await Order.countDocuments(filters)
-        const totalPages = Math.ceil(totalOrders / Number(limit))
+        const totalOrders = await Order.countDocuments(safeFilters)
+        const totalPages = Math.ceil(totalOrders / normalizedLimit)
 
         res.status(200).json({
             orders,
@@ -141,11 +155,15 @@ export const getOrders = async (
                 totalOrders,
                 totalPages,
                 currentPage: Number(page),
-                pageSize: Number(limit),
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {
-        next(error)
+        if (error instanceof Error) {
+            next(error);
+        } else {
+            next(new Error('Произошла неизвестная ошибка'));
+        }
     }
 }
 
@@ -157,9 +175,13 @@ export const getOrdersCurrentUser = async (
     try {
         const userId = res.locals.user._id
         const { search, page = 1, limit = 5 } = req.query
+
+        const normalizedLimit = Math.min(Number(limit), 10);
+
+
         const options = {
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
+            skip: (Number(page) - 1) * normalizedLimit,
+            limit: normalizedLimit,
         }
 
         const user = await User.findById(userId)
@@ -205,7 +227,7 @@ export const getOrdersCurrentUser = async (
         }
 
         const totalOrders = orders.length
-        const totalPages = Math.ceil(totalOrders / Number(limit))
+        const totalPages = Math.ceil(totalOrders / normalizedLimit)
 
         orders = orders.slice(options.skip, options.skip + options.limit)
 
@@ -215,7 +237,7 @@ export const getOrdersCurrentUser = async (
                 totalOrders,
                 totalPages,
                 currentPage: Number(page),
-                pageSize: Number(limit),
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {
@@ -294,6 +316,12 @@ export const createOrder = async (
         const { address, payment, phone, total, email, items, comment } =
             req.body
 
+        // Санитизируем текстовые поля от XSS
+        const sanitizedAddress = address ? sanitizeHTML(address) : address;
+        const sanitizedComment = comment ? sanitizeHTML(comment) : comment;
+        const sanitizedEmail = email ? sanitizeHTML(email) : email;
+        const sanitizedPhone = phone ? sanitizeHTML(phone) : phone;
+
         items.forEach((id: Types.ObjectId) => {
             const product = products.find((p) => p._id.equals(id))
             if (!product) {
@@ -313,11 +341,11 @@ export const createOrder = async (
             totalAmount: total,
             products: items,
             payment,
-            phone,
-            email,
-            comment,
+            phone: sanitizedPhone,           // ← Используем санитизированные данные
+            email: sanitizedEmail,           // ← Используем санитизированные данные
+            comment: sanitizedComment,       // ← Используем санитизированные данные
             customer: userId,
-            deliveryAddress: address,
+            deliveryAddress: sanitizedAddress, // ← Используем санитизированные данные
         })
         const populateOrder = await newOrder.populate(['customer', 'products'])
         await populateOrder.save()

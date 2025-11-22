@@ -22,3 +22,10 @@ export const REFRESH_TOKEN = {
         } as CookieOptions,
     },
 }
+
+export const CSRF_CONFIG = {
+    tokenLength: 32,
+    cookieName: 'XSRF-TOKEN',
+    headerName: 'X-CSRF-Token',
+    maxAge: 3600000, // 1 час
+};

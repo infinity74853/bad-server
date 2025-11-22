@@ -27,7 +27,18 @@ const storage = multer.diskStorage({
         file: Express.Multer.File,
         cb: FileNameCallback
     ) => {
-        cb(null, file.originalname)
+        // Безопасное имя файла: timestamp + random number
+        const timestamp = Date.now()
+        const random = Math.round(Math.random() * 1E9)
+        const safeName = `file_${timestamp}_${random}`
+        
+        // Сохраняем оригинальное расширение если оно безопасное
+        const originalExt = file.originalname.split('.').pop()
+        const safeExt = originalExt && /^[a-z0-9]+$/i.test(originalExt) 
+            ? `.${originalExt.toLowerCase()}` 
+            : ''
+            
+        cb(null, `${safeName}${safeExt}`)
     },
 })
 
@@ -40,15 +51,34 @@ const types = [
 ]
 
 const fileFilter = (
-    _req: Request,
+    req: Request,
     file: Express.Multer.File,
     cb: FileFilterCallback
 ) => {
+    console.log('📁 File filter - size:', file.size, 'type:', file.mimetype); // ДОБАВЬ ЛОГ
+    
     if (!types.includes(file.mimetype)) {
+        (req as any).fileValidationError = 'Недопустимый тип файла. Разрешены только: PNG, JPG, JPEG, GIF, SVG'
         return cb(null, false)
     }
-
+    
+    // ПРОВЕРКА МИНИМАЛЬНОГО РАЗМЕРА (2KB)
+    if (file.size < 2 * 1024) { // 2KB = 2048 bytes
+        console.log('❌ File too small:', file.size, 'bytes'); // ДОБАВЬ ЛОГ
+        (req as any).fileValidationError = 'Файл слишком маленький. Минимальный размер: 2KB'
+        return cb(null, false)
+    }
+    
+    console.log('✅ File accepted:', file.size, 'bytes'); // ДОБАВЬ ЛОГ
     return cb(null, true)
 }
 
-export default multer({ storage, fileFilter })
+// Добавляем лимиты
+const limits = {
+    fileSize: 5 * 1024 * 1024, // 5MB максимум
+    files: 1 // 1 файл за раз
+}
+
+const upload = multer({ storage, fileFilter, limits })
+
+export default upload

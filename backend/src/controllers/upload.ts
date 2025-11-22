@@ -7,16 +7,25 @@ export const uploadFile = async (
     res: Response,
     next: NextFunction
 ) => {
+    // Проверка на кастомные ошибки валидации
+    if ((req as any).fileValidationError) {
+        return next(new BadRequestError((req as any).fileValidationError))
+    }
+    
     if (!req.file) {
         return next(new BadRequestError('Файл не загружен'))
     }
+    
+    // ДОБАВЬ ПРОВЕРКУ МИНИМАЛЬНОГО РАЗМЕРА ЗДЕСЬ
+    if (req.file.size < 2 * 1024) {
+        return next(new BadRequestError('Файл слишком маленький. Минимальный размер: 2KB'))
+    }
+    
     try {
-        const fileName = process.env.UPLOAD_PATH
-            ? `/${process.env.UPLOAD_PATH}/${req.file.filename}`
-            : `/${req.file?.filename}`
-        return res.status(constants.HTTP_STATUS_CREATED).send({
-            fileName,
-            originalName: req.file?.originalname,
+        const fileName = req.file.filename;
+        
+        return res.status(constants.HTTP_STATUS_CREATED).json({
+            fileName
         })
     } catch (error) {
         return next(error)

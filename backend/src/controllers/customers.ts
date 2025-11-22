@@ -3,6 +3,9 @@ import { FilterQuery } from 'mongoose'
 import NotFoundError from '../errors/not-found-error'
 import Order from '../models/order'
 import User, { IUser } from '../models/user'
+import { sanitizeHTML } from '../utils/sanitize';
+import { createSafeRegex, hasNoSQLInjection, sanitizeFilter } from '../utils/nosql-sanitize';
+import BadRequestError from '../errors/bad-request-error';
 
 // TODO: Добавить guard admin
 // eslint-disable-next-line max-len
@@ -13,23 +16,112 @@ export const getCustomers = async (
     next: NextFunction
 ) => {
     try {
-        const {
-            page = 1,
-            limit = 10,
-            sortField = 'createdAt',
-            sortOrder = 'desc',
+        // СТРОГАЯ ВАЛИДАЦИЯ ПАРАМЕТРОВ
+        const allowedParams = [
+            'page', 'limit', 'sortField', 'sortOrder', 'registrationDateFrom',
+            'registrationDateTo', 'lastOrderDateFrom', 'lastOrderDateTo',
+            'totalAmountFrom', 'totalAmountTo', 'orderCountFrom', 'orderCountTo', 'search', 'name'
+        ];
+        
+        // Проверяем, что нет лишних параметров
+        const invalidParams = Object.keys(req.query).filter(param => !allowedParams.includes(param));
+        if (invalidParams.length > 0) {
+            return next(new BadRequestError(`Недопустимые параметры: ${invalidParams.join(', ')}`));
+        }
+
+        // ВАЛИДАЦИЯ ЧИСЛОВЫХ ПАРАМЕТРОВ
+        const { page = 1, limit = 10 } = req.query;
+        
+        if (page && Number.isNaN(Number(page))) {
+            return next(new BadRequestError('Параметр page должен быть числом'));
+        }
+        if (limit && Number.isNaN(Number(limit))) {
+            return next(new BadRequestError('Параметр limit должен быть числом'));
+        }
+
+        const normalizedLimit = Math.min(Number(limit), 10);
+
+        // ВАЛИДАЦИЯ ДАТ
+        const { 
             registrationDateFrom,
             registrationDateTo,
-            lastOrderDateFrom,
-            lastOrderDateTo,
+            lastOrderDateFrom, 
+            lastOrderDateTo 
+        } = req.query;
+
+        if (registrationDateFrom && Number.isNaN(Date.parse(registrationDateFrom as string))) {
+            return next(new BadRequestError('Неверный формат даты registrationDateFrom'));
+        }
+        if (registrationDateTo && Number.isNaN(Date.parse(registrationDateTo as string))) {
+            return next(new BadRequestError('Неверный формат даты registrationDateTo'));
+        }
+        if (lastOrderDateFrom && Number.isNaN(Date.parse(lastOrderDateFrom as string))) {
+            return next(new BadRequestError('Неверный формат даты lastOrderDateFrom'));
+        }
+        if (lastOrderDateTo && Number.isNaN(Date.parse(lastOrderDateTo as string))) {
+            return next(new BadRequestError('Неверный формат даты lastOrderDateTo'));
+        }
+
+        const {
+            sortField = 'createdAt',
+            sortOrder = 'desc',
             totalAmountFrom,
             totalAmountTo,
             orderCountFrom,
             orderCountTo,
             search,
-        } = req.query
+            name,            
+        } = req.query;
 
+        // ВАЛИДАЦИЯ sortField - разрешаем только безопасные поля
+        const allowedSortFields = ['createdAt', 'totalAmount', 'orderCount', 'lastOrderDate'];
+        if (sortField && !allowedSortFields.includes(sortField as string)) {
+            return next(new BadRequestError('Невалидное поле для сортировки'));
+        }
+
+        // ВАЛИДАЦИЯ sortOrder - только 'asc' или 'desc'
+        if (sortOrder && !['asc', 'desc'].includes(sortOrder as string)) {
+            return next(new BadRequestError('Невалидный порядок сортировки'));
+        }
+
+        // ФУНКЦИЯ ПОИСКА ПО ЗАПРОСУ
+        // const isValidSearchQuery = (query: string): boolean => {
+        //     // Разрешаем одиночные спецсимволы в поиске
+        //     const singleSymbols = ['*', '+', '?', '.', '^', '$', '(', ')', '[', ']', '\\'];
+        //     return !singleSymbols.some(symbol => query === symbol); // ИСПРАВИЛ логику
+        // };
+
+        // ПРОВЕРКА
+        // if (search && hasNoSQLInjection(search as string) && !isValidSearchQuery(search as string)) {
+        //     return next(new BadRequestError('Обнаружена попытка NoSQL-инъекции в поиске'));
+        // }
+
+        // ОБЪЯВЛЯЕМ filters ЗДЕСЬ - ПЕРЕД ИСПОЛЬЗОВАНИЕМ
         const filters: FilterQuery<Partial<IUser>> = {}
+
+        // ОТДЕЛЬНАЯ ОБРАБОТКА ПАРАМЕТРА name С ВАЛИДАЦИЕЙ (ПЕРЕМЕЩАЕМ ПОСЛЕ ОБЪЯВЛЕНИЯ filters)
+        if (name) {
+            const nameValue = name as string;
+            
+            // Проверяем, что name - это простая строка, а не объект с операторами
+            if (typeof nameValue !== 'string' || nameValue.trim() === '') {
+                return next(new BadRequestError('Параметр name должен быть непустой строкой'));
+            }
+            
+            // Проверяем на NoSQL-инъекции
+            if (hasNoSQLInjection(nameValue)) {
+                return next(new BadRequestError('Обнаружена попытка NoSQL-инъекции в name'));
+            }
+            
+            // Проверяем длину (защита от больших payload)
+            if (nameValue.length > 100) {
+                return next(new BadRequestError('Слишком длинное значение name'));
+            }
+            
+            // БЕЗОПАСНОЕ СОЗДАНИЕ ФИЛЬТРА
+            const nameRegex = createSafeRegex(nameValue);
+            filters.name = nameRegex;
+        }
 
         if (registrationDateFrom) {
             filters.createdAt = {
@@ -63,42 +155,40 @@ export const getCustomers = async (
             }
         }
 
+        // БЕЗОПАСНОЕ СОЗДАНИЕ ФИЛЬТРОВ БЕЗ ОПЕРАТОРОВ ИЗ QUERY
         if (totalAmountFrom) {
-            filters.totalAmount = {
-                ...filters.totalAmount,
-                $gte: Number(totalAmountFrom),
-            }
+            filters.totalAmount = { $gte: Number(totalAmountFrom) };  // ← Создаем оператор безопасно
         }
 
         if (totalAmountTo) {
-            filters.totalAmount = {
-                ...filters.totalAmount,
-                $lte: Number(totalAmountTo),
+            filters.totalAmount = { 
+                ...filters.totalAmount, 
+                $lte: Number(totalAmountTo)  // ← Создаем оператор безопасно
             }
         }
 
         if (orderCountFrom) {
-            filters.orderCount = {
-                ...filters.orderCount,
-                $gte: Number(orderCountFrom),
-            }
+            filters.orderCount = { $gte: Number(orderCountFrom) };  // ← Создаем оператор безопасно
         }
 
         if (orderCountTo) {
-            filters.orderCount = {
-                ...filters.orderCount,
-                $lte: Number(orderCountTo),
+            filters.orderCount = { 
+                ...filters.orderCount, 
+                $lte: Number(orderCountTo)  // ← Создаем оператор безопасно
             }
-        }
+        }      
 
         if (search) {
-            const searchRegex = new RegExp(search as string, 'i')
+            // Экранируем специальные символы напрямую
+            const escapedSearch = (search as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const searchRegex = new RegExp(escapedSearch, 'i');
+    
             const orders = await Order.find(
                 {
                     $or: [{ deliveryAddress: searchRegex }],
                 },
                 '_id'
-            )
+            )    
 
             const orderIds = orders.map((order) => order._id)
 
@@ -107,6 +197,9 @@ export const getCustomers = async (
                 { lastOrder: { $in: orderIds } },
             ]
         }
+        
+        // ДОБАВЛЯЕМ САНИТИЗАЦИЮ ФИЛЬТРОВ:
+        const safeFilters = sanitizeFilter(filters);
 
         const sort: { [key: string]: any } = {}
 
@@ -116,11 +209,11 @@ export const getCustomers = async (
 
         const options = {
             sort,
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
+            skip: (Number(page) - 1) * normalizedLimit,
+            limit: normalizedLimit
         }
 
-        const users = await User.find(filters, null, options).populate([
+        const users = await User.find(safeFilters, null, options).populate([
             'orders',
             {
                 path: 'lastOrder',
@@ -136,8 +229,8 @@ export const getCustomers = async (
             },
         ])
 
-        const totalUsers = await User.countDocuments(filters)
-        const totalPages = Math.ceil(totalUsers / Number(limit))
+        const totalUsers = await User.countDocuments(safeFilters)
+        const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({
             customers: users,
@@ -145,11 +238,15 @@ export const getCustomers = async (
                 totalUsers,
                 totalPages,
                 currentPage: Number(page),
-                pageSize: Number(limit),
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {
-        next(error)
+        if (error instanceof Error) {
+            next(error);
+        } else {
+            next(new Error('Произошла неизвестная ошибка'));
+        }
     }
 }
 
@@ -179,9 +276,19 @@ export const updateCustomer = async (
     next: NextFunction
 ) => {
     try {
+        // Санитизируем данные от XSS перед обновлением
+        const sanitizedBody = { ...req.body };
+        
+        if (sanitizedBody.name) {
+            sanitizedBody.name = sanitizeHTML(sanitizedBody.name);
+        }
+        if (sanitizedBody.email) {
+            sanitizedBody.email = sanitizeHTML(sanitizedBody.email);
+        }
+        
         const updatedUser = await User.findByIdAndUpdate(
             req.params.id,
-            req.body,
+            sanitizedBody, // ← Используем санитизированные данные
             {
                 new: true,
             }
