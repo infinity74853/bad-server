@@ -45,6 +45,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - public:/app/src/public
+      - ./backend/src/public/images:/app/src/public/images:rw
     ports:
       - 3000:3000
     networks:
