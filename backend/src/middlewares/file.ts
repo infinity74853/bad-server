@@ -60,6 +60,13 @@ const fileFilter = (
         (req as any).fileValidationError = 'Недопустимый тип файла. Разрешены только: PNG, JPG, JPEG, GIF, SVG'
         return cb(null, false)
     }
+    
+    // ДОБАВЛЯЕМ ПРОВЕРКУ МИНИМАЛЬНОГО РАЗМЕРА (2KB)
+    if (file.size < 2 * 1024) { // 2KB = 2048 bytes
+        (req as any).fileValidationError = 'Файл слишком маленький. Минимальный размер: 2KB'
+        return cb(null, false)
+    }
+    
     return cb(null, true)
 }
 
