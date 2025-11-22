@@ -55,18 +55,21 @@ const fileFilter = (
     file: Express.Multer.File,
     cb: FileFilterCallback
 ) => {
+    console.log('📁 File filter - size:', file.size, 'type:', file.mimetype); // ДОБАВЬ ЛОГ
+    
     if (!types.includes(file.mimetype)) {
-        // Добавляем ошибку в request для последующей обработки
         (req as any).fileValidationError = 'Недопустимый тип файла. Разрешены только: PNG, JPG, JPEG, GIF, SVG'
         return cb(null, false)
     }
     
-    // ДОБАВЛЯЕМ ПРОВЕРКУ МИНИМАЛЬНОГО РАЗМЕРА (2KB)
+    // ПРОВЕРКА МИНИМАЛЬНОГО РАЗМЕРА (2KB)
     if (file.size < 2 * 1024) { // 2KB = 2048 bytes
+        console.log('❌ File too small:', file.size, 'bytes'); // ДОБАВЬ ЛОГ
         (req as any).fileValidationError = 'Файл слишком маленький. Минимальный размер: 2KB'
         return cb(null, false)
     }
     
+    console.log('✅ File accepted:', file.size, 'bytes'); // ДОБАВЬ ЛОГ
     return cb(null, true)
 }
 
