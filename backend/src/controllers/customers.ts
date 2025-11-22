@@ -39,6 +39,8 @@ export const getCustomers = async (
             return next(new BadRequestError('Параметр limit должен быть числом'));
         }
 
+        const normalizedLimit = Math.min(Number(limit), 10);
+
         // ВАЛИДАЦИЯ ДАТ
         const { 
             registrationDateFrom,
@@ -167,10 +169,13 @@ export const getCustomers = async (
                 ...filters.orderCount, 
                 $lte: Number(orderCountTo)  // ← Создаем оператор безопасно
             }
-        }        
+        }      
 
         if (search) {
-            const searchRegex = createSafeRegex(search as string);
+            // Экранируем специальные символы напрямую
+            const escapedSearch = (search as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const searchRegex = new RegExp(escapedSearch, 'i');
+    
             const orders = await Order.find(
                 {
                     $or: [{ deliveryAddress: searchRegex }],
@@ -197,8 +202,8 @@ export const getCustomers = async (
 
         const options = {
             sort,
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
+            skip: (Number(page) - 1) * normalizedLimit,
+            limit: normalizedLimit
         }
 
         const users = await User.find(safeFilters, null, options).populate([
@@ -218,7 +223,7 @@ export const getCustomers = async (
         ])
 
         const totalUsers = await User.countDocuments(safeFilters)
-        const totalPages = Math.ceil(totalUsers / Number(limit))
+        const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({
             customers: users,
@@ -226,7 +231,7 @@ export const getCustomers = async (
                 totalUsers,
                 totalPages,
                 currentPage: Number(page),
-                pageSize: Number(limit),
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {

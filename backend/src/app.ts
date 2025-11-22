@@ -20,8 +20,8 @@ app.set('trust proxy', 1) // Доверяем первому прокси (nginx
 
 // Rate Limiting для production
 const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 минут
-  max: 300, // 300 запросов с одного IP за окно
+  windowMs: 15 * 1000, // 1 минут
+  max: 20, // 300 запросов с одного IP за окно
   message: { 
     error: 'Слишком много запросов с этого IP, попробуйте позже' 
   },
